@@ -1,3 +1,64 @@
-fn main() {
-    println!("Hello, world!");
+use scraper::{Html, Selector};
+use serde_json;
+use std::collections::HashMap;
+use std::io::{self, Read};
+
+fn main() -> io::Result<()> {
+    let mut buffer = String::new();
+    io::stdin().read_to_string(&mut buffer)?;
+
+    let document = Html::parse_document(&buffer);
+
+    let table_selector = Selector::parse("table").unwrap();
+    let tr_selector = Selector::parse("tr").unwrap();
+    let td_selector = Selector::parse("td, th").unwrap(); // Select both td and th for cells
+
+    let mut all_tables: Vec<Vec<HashMap<String, String>>> = Vec::new();
+
+    for table_element in document.select(&table_selector) {
+        let mut header_cells: Option<Vec<String>> = None;
+        let mut current_table_processed_rows: Vec<HashMap<String, String>> = Vec::new();
+
+        for row_element in table_element.select(&tr_selector) {
+            let mut row_cells: Vec<String> = Vec::new();
+            for cell_element in row_element.select(&td_selector) {
+                row_cells.push(cell_element.text().collect::<String>().trim().to_string());
+            }
+
+            if row_cells.is_empty() {
+                continue; // Skip empty rows
+            }
+
+            if header_cells.is_none() {
+                header_cells = Some(row_cells);
+            } else {
+                let unwrapped_header = header_cells.as_ref().unwrap();
+                let mut row_map: HashMap<String, String> = HashMap::new();
+                for (index, cell_value) in row_cells.into_iter().enumerate() {
+                    if index < unwrapped_header.len() {
+                        row_map.insert(
+                            unwrapped_header[index].clone(),
+                            remove_redundant_spaces(&cell_value),
+                        );
+                    }
+                }
+                if !row_map.is_empty() {
+                    current_table_processed_rows.push(row_map);
+                }
+            }
+        }
+
+        if !current_table_processed_rows.is_empty() {
+            all_tables.push(current_table_processed_rows);
+        }
+    }
+
+    let json_output = serde_json::to_string_pretty(&all_tables)?;
+    println!("{}", json_output);
+
+    Ok(())
+}
+
+fn remove_redundant_spaces(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<&str>>().join(" ")
 }
